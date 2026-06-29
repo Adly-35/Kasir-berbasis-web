@@ -1,12 +1,10 @@
-// stok.js — Modul Logika Input Master Barang, Tambah Gudang, & Pindah Rak (PERBAIKAN RADIKAL - ANTI DUPLIKAT) — PART 1
-
+// stok.js — Modul Logika Input Master Barang & Isolasi Stok Berbasis Peran (HP Friendly - Part 1)
 const Stok = {
-    isRendering: false, // Kunci pengaman agar tidak terjadi render ganda bersamaan
-    produkEditAktif: null, // Menyimpan barcode produk yang sedang diedit
+    isRendering: false,
+    produkEditAktif: null,
 
-    // Menampilkan katalog master barang (Bisa ditracking semua level dengan tampilan dinamis)
+    // 1. MENAMPILKAN KATALOG BARANG SECARA DINAMIS
     async renderMasterBarang() {
-        // Jika sistem sedang merender, blokir panggilan render berikutnya sampai yang ini selesai
         if (this.isRendering) return;
         this.isRendering = true;
 
@@ -14,15 +12,13 @@ const Stok = {
         const tbody = document.getElementById('bodyMasterBarang');
         if (!tbody || !thead) { this.isRendering = false; return; }
 
-        // Bersihkan total isi tabel sebelum diisi data segar
         tbody.innerHTML = '';
         const userRole = (typeof Auth !== 'undefined' && Auth.currentUser) ? Auth.currentUser.role : 'Kasir';
 
-        // 1. SET HEADER DINAMIS BERDASARKAN LEVEL USER
         if (userRole === 'Owner') {
             thead.innerHTML = `<tr><th>Barcode & Nama</th><th>Harga Beli</th><th>Harga Jual</th><th style="width:100px;">Aksi</th></tr>`;
         } else {
-            thead.innerHTML = `<tr><th>Nama Barang</th><th>Barcode</th><th class="text-center">Stok Gudang</th><th class="text-center">Stok Rak</th><th style="text-align:right;">Harga Jual</th></tr>`;
+            thead.innerHTML = `<tr><th>Nama Barang</th><th>Barcode</th><th class="text-center">Stok Gudang</th><th class="text-center">Stok Isolasi</th><th style="text-align:right;">Harga Jual</th></tr>`;
         }
 
         try {
@@ -37,175 +33,45 @@ const Stok = {
                 return;
             }
 
-            // Gunakan DocumentFragment agar proses penempelan baris ke HTML super cepat dan ramah memori HP
             const fragment = document.createDocumentFragment();
-
             filtered.forEach(p => {
-                const isTerisolasi = p.hargaBeli === '-' || p.hargaJual === '-';
-                let hargaBeliDisplay = isTerisolasi ? '-' : (p.hargaBeli || 0).toLocaleString('id-ID');
-                let hargaJualDisplay = isTerisolasi ? '-' : (p.hargaJual || 0).toLocaleString('id-ID');
+                const isIsolasi = p.hargaBeli === '©©' || p.hargaJual === '©©';
+                let hBeliDisplay = isIsolasi ? '©©' : (p.hargaBeli || 0).toLocaleString('id-ID');
+                let hJualDisplay = isIsolasi ? '©©' : (p.hargaJual || 0).toLocaleString('id-ID');
+                const sIsolasi = p.stokIsolasi || 0;
 
                 const tr = document.createElement('tr');
-
                 if (userRole === 'Owner') {
                     tr.innerHTML = `
-                        <td><strong>${p.nama}</strong> ${isTerisolasi ? '<span class="badge bg-danger" style="padding:2px 5px; font-size:10px; border-radius:4px; color:#fff;">⚠️ TERISOLASI</span>' : ''}<br><small>${p.barcode}</small></td>
-                        <td style="text-align:right;">${isTerisolasi ? '' : 'Rp '} ${hargaBeliDisplay}</td>
-                        <td style="text-align:right; font-weight:bold; color:#27ae60;">${isTerisolasi ? '' : 'Rp '} ${hargaJualDisplay}</td>
-                        <td class="text-center" style="white-space:nowrap;">
-                            <button class="btn btn-sm" style="background:#2196F3; color:white; padding:4px 8px; font-size:11px; margin-right:4px; border:none; border-radius:4px;" onclick="Stok.bukaModalEdit('${p.barcode}')">📝 Edit</button>
-                            <button class="btn btn-sm" style="background:#e74c3c; color:white; padding:4px 8px; font-size:11px; border:none; border-radius:4px;" onclick="Stok.hapusMasterBarang('${p.barcode}')">✕ Hapus</button>
+                        <td><strong>${p.nama}</strong> ${isIsolasi || sIsolasi > 0 ? '<span class="badge" style="background:#e74c3c; color:#fff; padding:2px 4px; font-size:9px; border-radius:3px;">⚠️ ISOLASI ('+sIsolasi+')</span>' : ''}<br><small>${p.barcode}</small></td>
+                        <td style="text-align:right;">${isIsolasi ? '' : 'Rp '} ${hBeliDisplay}</td>
+                        <td style="text-align:right; font-weight:bold; color:#27ae60;">${isIsolasi ? '' : 'Rp '} ${hJualDisplay}</td>
+                        <td class="text-center">
+                            <button class="btn btn-sm" style="background:#2196F3; color:white; padding:3px 6px; font-size:11px;" onclick="Stok.bukaModalEdit('${p.barcode}')">📝 Edit</button>
                         </td>
                     `;
                 } else {
                     tr.innerHTML = `
-                        <td><strong>${p.nama}</strong> ${isTerisolasi ? '<br><span style="color:red; font-size:11px; font-weight:bold;">[TERISOLASI]</span>' : ''}</td>
+                        <td><strong>${p.nama}</strong></td>
                         <td><code>${p.barcode}</code></td>
-                        <td class="text-center" style="color:#7f8c8d;">${p.stokGudang || 0} pcs</td>
-                        <td class="text-center" style="font-weight:bold; color:#27ae60;">${p.stokRak || 0} pcs</td>
-                        <td style="text-align:right; font-weight:bold; color:#2196F3;">${isTerisolasi ? '-' : 'Rp ' + hargaJualDisplay}</td>
+                        <td class="text-center">${p.stokGudang || 0} pcs</td>
+                        <td class="text-center" style="color:#e74c3c; font-weight:bold;">${sIsolasi} pcs</td>
+                        <td style="text-align:right; font-weight:bold; color:#2196F3;">${isIsolasi ? '©©' : 'Rp ' + hJualDisplay}</td>
                     `;
                 }
                 fragment.appendChild(tr);
             });
-
-            // Tempelkan seluruh baris secara serentak ke dalam tabel
             tbody.appendChild(fragment);
+        } catch (err) { console.error(err); }
 
-        } catch (err) {
-            console.error("Gagal merender master barang:", err);
-        }
-
-        // 3. PROTEKSI FISIK FORM INPUT DI HP STAF
-        const inputBeli = document.getElementById('mHargaBeli');
-        const inputJual = document.getElementById('mHargaJual');
         const wrapperHarga = document.getElementById('wrapperHargaMaster');
-
-        if (userRole === 'Owner') {
-            if (wrapperHarga) wrapperHarga.style.display = 'block';
-            if (inputBeli) { inputBeli.readOnly = false; inputBeli.type = 'number'; }
-            if (inputJual) { inputJual.readOnly = false; inputJual.type = 'number'; }
-        } else {
-            if (wrapperHarga) wrapperHarga.style.display = 'none';
-            if (inputBeli) { inputBeli.type = 'text'; inputBeli.value = '-'; inputBeli.readOnly = true; }
-            if (inputJual) { inputJual.type = 'text'; inputJual.value = '-'; inputJual.readOnly = true; }
+        if (wrapperHarga) {
+            wrapperHarga.style.display = (userRole === 'Owner') ? 'block' : 'none';
         }
-
-        this.renderStokGudang();
-        this.renderStokToko();
-
-        // Buka kembali kunci render setelah selesai proses
+        this.loadDropdownPindahStok();
         this.isRendering = false;
     },
-
-    // ========== FITUR EDIT PRODUK (OWNER ONLY) ==========
-
-    async bukaModalEdit(barcode) {
-        if (typeof Auth !== 'undefined' && Auth.currentUser && Auth.currentUser.role !== 'Owner') {
-            alert("⛔ Akses Ditolak! Hanya Owner Utama yang dapat mengedit data barang.");
-            return;
-        }
-
-        const p = await DB.get("produk", barcode);
-        if (!p) { alert("❌ Produk tidak ditemukan!"); return; }
-
-        this.produkEditAktif = barcode;
-
-        // Isi form edit dengan data produk
-        document.getElementById('editBarcode').value = p.barcode;
-        document.getElementById('editNama').value = p.nama;
-        document.getElementById('editHargaBeli').value = p.hargaBeli === '-' ? '' : (p.hargaBeli || '');
-        document.getElementById('editHargaJual').value = p.hargaJual === '-' ? '' : (p.hargaJual || '');
-        document.getElementById('editStokGudang').value = p.stokGudang || 0;
-        document.getElementById('editStokRak').value = p.stokRak || 0;
-
-        // Tampilkan modal
-        const modal = document.getElementById('modalEditProduk');
-        if (modal) {
-            modal.classList.remove('hidden');
-            modal.style.display = 'flex';
-        }
-    },
-
-    tutupModalEdit() {
-        this.produkEditAktif = null;
-        const modal = document.getElementById('modalEditProduk');
-        if (modal) {
-            modal.classList.add('hidden');
-            modal.style.display = 'none';
-        }
-    },
-
-    async simpanEditProduk() {
-        if (!this.produkEditAktif) return;
-
-        const barcode = document.getElementById('editBarcode').value.trim();
-        const nama = document.getElementById('editNama').value.trim();
-        const hargaBeli = parseFloat(document.getElementById('editHargaBeli').value);
-        const hargaJual = parseFloat(document.getElementById('editHargaJual').value);
-        const stokGudang = parseInt(document.getElementById('editStokGudang').value) || 0;
-        const stokRak = parseInt(document.getElementById('editStokRak').value) || 0;
-
-        if (!barcode || !nama) {
-            alert("❌ Barcode dan Nama Barang wajib diisi!");
-            return;
-        }
-
-        if (isNaN(hargaBeli) || hargaBeli <= 0 || isNaN(hargaJual) || hargaJual <= 0) {
-            alert("❌ Harga Beli & Jual wajib diisi dengan angka valid di atas 0!");
-            return;
-        }
-
-        try {
-            // Ambil data lama untuk preservasi field lain
-            const p = await DB.get("produk", this.produkEditAktif);
-            if (!p) { alert("❌ Data produk asli tidak ditemukan!"); return; }
-
-            // Update data
-            const dataBaru = {
-                ...p,
-                barcode: barcode,
-                nama: nama,
-                hargaBeli: hargaBeli,
-                hargaJual: hargaJual,
-                stokGudang: stokGudang,
-                stokRak: stokRak,
-                lastUpdate: Date.now()
-            };
-
-            // Jika barcode berubah, hapus entry lama dan buat baru
-            if (barcode !== this.produkEditAktif) {
-                // Cek apakah barcode baru sudah dipakai produk lain
-                const cekBarcode = await DB.get("produk", barcode);
-                if (cekBarcode && barcode !== this.produkEditAktif) {
-                    alert("❌ Barcode baru sudah digunakan oleh produk lain!");
-                    return;
-                }
-                await DB.delete("produk", this.produkEditAktif);
-                if (typeof firebase !== 'undefined' && firebase.apps.length) {
-                    await firebase.database().ref('produk_master/' + this.produkEditAktif).remove();
-                }
-            }
-
-            await DB.put("produk", dataBaru);
-            if (typeof firebase !== 'undefined' && firebase.apps.length) {
-                await firebase.database().ref('produk_master/' + barcode).set(dataBaru);
-            }
-
-            if (typeof Beep !== 'undefined' && Beep.ok) Beep.ok();
-            alert("✅ Data produk berhasil diperbarui!");
-            this.tutupModalEdit();
-            this.renderMasterBarang();
-
-        } catch (e) {
-            alert("❌ Gagal menyimpan perubahan: " + e.message);
-            console.error(e);
-        }
-    },
-
-    // ========== END FITUR EDIT ==========
-
-    // Mengecek data barcode lama saat diketik/di-scan — PART 2
+    // 2. CEK DATA BARCODE SEWAKTU DI-SCAN ATAU DIKETIK
     async cekProdukLama() {
         const barcode = document.getElementById('mBarcode').value.trim();
         const infoBox = document.getElementById('infoProdukLama');
@@ -217,17 +83,12 @@ const Stok = {
 
         if (p) {
             document.getElementById('mNama').value = p.nama;
-
             if (userRole === 'Owner') {
-                document.getElementById('mHargaBeli').value = p.hargaBeli !== '-' ? (p.hargaBeli || '') : '';
-                document.getElementById('mHargaJual').value = p.hargaJual !== '-' ? (p.hargaJual || '') : '';
-            } else {
-                document.getElementById('mHargaBeli').value = '-';
-                document.getElementById('mHargaJual').value = '-';
+                document.getElementById('mHargaBeli').value = p.hargaBeli !== '©©' ? (p.hargaBeli || '') : '';
+                document.getElementById('mHargaJual').value = p.hargaJual !== '©©' ? (p.hargaJual || '') : '';
             }
-
             if (infoBox && detailBox) {
-                detailBox.innerHTML = `Gudang: ${p.stokGudang || 0} pcs | Rak Toko: ${p.stokRak || 0} pcs`;
+                detailBox.innerHTML = `Legal Gudang: ${p.stokGudang || 0} pcs | Terisolasi: ${p.stokIsolasi || 0} pcs`;
                 infoBox.style.display = 'block';
             }
         } else {
@@ -235,113 +96,159 @@ const Stok = {
         }
     },
 
-    // Menyimpan / Menambah Stok Baru dari Fitur Utama
+    // 3. PROSES SIMPAN SMART STOK (KASIR AUTO-ISOLASI)
     async simpanSmartStok() {
         const barcode = document.getElementById('mBarcode').value.trim();
         const nama = document.getElementById('mNama').value.trim();
         const qtyMasuk = parseInt(document.getElementById('mQtyMasuk').value) || 0;
 
-        if (!barcode || !nama || qtyMasuk < 0) { alert("❌ Data identitas barang atau jumlah tidak valid!"); return; }
+        if (!barcode || !nama || qtyMasuk <= 0) { alert("❌ Barcode, Nama, dan Jumlah Masuk wajib valid!"); return; }
 
         const userRole = (typeof Auth !== 'undefined' && Auth.currentUser) ? Auth.currentUser.role : 'Kasir';
         const produkLama = await DB.get("produk", barcode);
 
-        let hargaBeliFinal = "-";
-        let hargaJualFinal = "-";
-
-        if (userRole === 'Owner') {
-            const hBeli = parseFloat(document.getElementById('mHargaBeli').value);
-            const hJual = parseFloat(document.getElementById('mHargaJual').value);
-
-            if (isNaN(hBeli) || hBeli <= 0 || isNaN(hJual) || hJual <= 0) {
-                alert("❌ Bagi Owner, Harga Beli & Jual wajib diisi dengan angka valid di atas 0!");
-                return;
-            }
-            hargaBeliFinal = hBeli;
-            hargaJualFinal = hJual;
-        } else {
-            hargaBeliFinal = "-";
-            hargaJualFinal = "-";
-        }
-
         try {
-            let data = produkLama 
-                ? { ...produkLama, nama, hargaBeli: hargaBeliFinal, hargaJual: hargaJualFinal, stokGudang: (produkLama.stokGudang || 0) + qtyMasuk }
-                : { barcode, nama, hargaBeli: hargaBeliFinal, hargaJual: hargaJualFinal, stokGudang: qtyMasuk, stokRak: 0 };
+            let data;
+            if (userRole === 'Owner') {
+                const hBeli = parseFloat(document.getElementById('mHargaBeli').value);
+                const hJual = parseFloat(document.getElementById('mHargaJual').value);
+                if (isNaN(hBeli) || hBeli <= 0 || isNaN(hJual) || hJual <= 0) {
+                    alert("❌ Owner wajib mengisi nominal harga beli dan jual di atas 0!"); return;
+                }
+                data = produkLama ? 
+                    { ...produkLama, nama, hargaBeli: hBeli, hargaJual: hJual, stokGudang: (produkLama.stokGudang || 0) + qtyMasuk } :
+                    { barcode, nama, hargaBeli: hBeli, hargaJual: hJual, stokGudang: qtyMasuk, stokIsolasi: 0, stokRak: 0 };
+            } else {
+                // KASIR/SUPERVISOR: Masuk status isolasi, harga murni dikunci ke '©©'
+                if (produkLama) {
+                    data = { ...produkLama, nama, stokIsolasi: (produkLama.stokIsolasi || 0) + qtyMasuk };
+                } else {
+                    data = { barcode, nama, hargaBeli: '©©', hargaJual: '©©', stokGudang: 0, stokIsolasi: qtyMasuk, stokRak: 0 };
+                }
+            }
 
             await DB.put("produk", data);
             if (typeof firebase !== 'undefined' && firebase.apps.length) {
                 await firebase.database().ref('produk_master/' + barcode).set(data);
             }
 
-            alert(hargaBeliFinal === '-' ? "⚠️ Sukses! Produk terisolasi karena Anda login sebagai Kasir/Supervisor (Harga murni dikunci ke '-')." : "✅ Produk berhasil disimpan!");
+            alert(userRole !== 'Owner' ? "⚠️ Sukses! Stok baru dimasukkan ke status ISOLASI menanti persetujuan Owner." : "✅ Produk berhasil disimpan!");
             this.bersihkanFormMaster();
-            this.renderMasterBarang();
-        } catch (e) { alert("❌ Gagal menyimpan."); }
+        } catch (e) { alert("❌ Gagal menyimpan stok."); }
     },
 
     bersihkanFormMaster() {
         document.getElementById('mBarcode').value = '';
         document.getElementById('mNama').value = '';
-        this.renderMasterBarang();
         document.getElementById('mQtyMasuk').value = '';
+        if (document.getElementById('mHargaBeli')) document.getElementById('mHargaBeli').value = '';
+        if (document.getElementById('mHargaJual')) document.getElementById('mHargaJual').value = '';
         if (document.getElementById('infoProdukLama')) document.getElementById('infoProdukLama').style.display = 'none';
+        this.renderMasterBarang();
     },
-
-    // Mengisi stok gudang tambahan di bagian bawah menu master barang — PART 3
-    async isiStokGudang() {
-        const barcode = document.getElementById('gudangBarcode').value.trim();
-        const qty = parseInt(document.getElementById('gudangJumlah').value) || 0;
-        if (!barcode || qty <= 0) return;
-
-        const p = await DB.get("produk", barcode);
-        if (!p) { alert("❌ Barcode belum terdaftar di master!"); return; }
-
-        const userRole = (typeof Auth !== 'undefined' && Auth.currentUser) ? Auth.currentUser.role : 'Kasir';
-
-        if (userRole !== 'Owner') {
-            p.hargaBeli = "-";
-            p.hargaJual = "-";
+    // 4. WINDOW EDIT DAN VERIFIKASI HARGA (OWNER ONLY)
+    async bukaModalEdit(barcode) {
+        if (typeof Auth !== 'undefined' && Auth.currentUser && Auth.currentUser.role !== 'Owner') {
+            alert("⛔ Akses Ditolak! Hanya Owner Utama yang dapat mengaktifkan barang isolasi."); return;
         }
 
-        p.stokGudang = (p.stokGudang || 0) + qty;
-        await DB.put("produk", p);
-        if (typeof firebase !== 'undefined' && firebase.apps.length) await firebase.database().ref('produk_master/' + barcode).set(p);
+        const p = await DB.get("produk", barcode);
+        if (!p) { alert("❌ Produk tidak ditemukan!"); return; }
 
-        alert(userRole !== 'Owner' ? "⚠️ Stok gudang ditambahkan! Status produk otomatis terisolasi." : "📥 Stok gudang berhasil ditambahkan!");
-        document.getElementById('gudangBarcode').value = '';
-        this.renderMasterBarang();
+        this.produkEditAktif = barcode;
+        document.getElementById('editBarcode').value = p.barcode;
+        document.getElementById('editNama').value = p.nama;
+        document.getElementById('editHargaBeli').value = p.hargaBeli === '©©' ? '' : (p.hargaBeli || '');
+        document.getElementById('editHargaJual').value = p.hargaJual === '©©' ? '' : (p.hargaJual || '');
+        document.getElementById('editStokGudang').value = p.stokGudang || 0;
+        
+        // Memperlihatkan info stok isolasi yang diajukan kasir di modal
+        const txtIsolasiInfo = document.getElementById('editStokIsolasiInfo') || { innerHTML: "" };
+        txtIsolasiInfo.innerHTML = `⚠️ Ada <strong>${p.stokIsolasi || 0} pcs</strong> dalam antrean isolasi kasir.`;
+
+        const modal = document.getElementById('modalEditProduk');
+        if (modal) { modal.classList.remove('hidden'); modal.style.display = 'flex'; }
     },
 
-    async renderStokGudang() {
-        const tbody = document.getElementById('bodyStokGudang');
-        if (!tbody) return; tbody.innerHTML = '';
+    async simpanEditProduk() {
+        if (!this.produkEditAktif) return;
+
+        const barcode = document.getElementById('editBarcode').value.trim();
+        const nama = document.getElementById('editNama').value.trim();
+        const hBeli = parseFloat(document.getElementById('editHargaBeli').value);
+        const hJual = parseFloat(document.getElementById('editHargaJual').value);
+        let sGudang = parseInt(document.getElementById('editStokGudang').value) || 0;
+
+        if (isNaN(hBeli) || hBeli <= 0 || isNaN(hJual) || hJual <= 0) {
+            alert("❌ Harga Beli & Jual wajib diisi angka valid untuk membuka status isolasi!"); return;
+        }
+
+        try {
+            const p = await DB.get("produk", this.produkEditAktif);
+            if (!p) return;
+
+            // Logika Gabung Otomatis: Pindahkan stok isolasi ke gudang legal karena harga sudah sah
+            const sIsolasiLama = p.stokIsolasi || 0;
+            sGudang += sIsolasiLama;
+
+            const dataBaru = {
+                ...p, barcode, nama, hargaBeli: hBeli, hargaJual: hJual,
+                stokGudang: sGudang, stokIsolasi: 0, lastUpdate: Date.now()
+            };
+
+            if (barcode !== this.produkEditAktif) {
+                await DB.delete("produk", this.produkEditAktif);
+                if (typeof firebase !== 'undefined' && firebase.apps.length) {
+                    await firebase.database().ref('produk_master/' + this.produkEditAktif).remove();
+                }
+            }
+
+            await DB.put("produk", dataBaru);
+            if (typeof firebase !== 'undefined' && firebase.apps.length) {
+                await firebase.database().ref('produk_master/' + barcode).set(dataBaru);
+            }
+
+            alert(`✅ Sukses! Status isolasi dicabut. ${sIsolasiLama} pcs barang digabungkan ke stok gudang legal.`);
+            const modal = document.getElementById('modalEditProduk');
+            if (modal) { modal.style.display = 'none'; modal.classList.add('hidden'); }
+            this.produkEditAktif = null;
+            this.renderMasterBarang();
+        } catch (e) { alert("❌ Gagal memproses data."); }
+    },
+    // 5. DROPDOWN DAN PENGAMAT PINDAH STOK RAK TOKO
+    async loadDropdownPindahStok() {
+        const select = document.getElementById('rakSelectBarcode');
+        if (!select) return;
+        select.innerHTML = '<option value="">-- Pilih Barang --</option>';
+
         const list = await DB.getAll("produk");
+        list.sort((a, b) => a.nama.localeCompare(b.nama));
         list.forEach(p => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td><strong>${p.nama}</strong></td><td><code>${p.barcode}</code></td><td class="text-center">${p.stokGudang || 0} pcs</td>`;
-            tbody.appendChild(tr);
+            if ((p.stokGudang || 0) <= 0) return;
+            const opt = document.createElement('option');
+            opt.value = p.barcode;
+            opt.textContent = `${p.nama} (Legal Gudang: ${p.stokGudang} pcs)`;
+            select.appendChild(opt);
         });
     },
 
-    async renderStokToko() {
-        const tbody = document.getElementById('bodyStokToko');
-        if (!tbody) return; tbody.innerHTML = '';
-        const list = await DB.getAll("produk");
-        list.forEach(p => {
-            const isTerisolasi = p.hargaBeli === '-' || p.hargaJual === '-';
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td><strong>${p.nama}</strong> ${isTerisolasi ? '<span style="color:red;font-size:10px;">[Terisolasi]</span>':''}<br><small>${p.barcode}</small></td>
-                <td class="text-center">${p.stokGudang || 0} pcs</td>
-                <td class="text-center" style="font-weight:bold; color:#27ae60;">${p.stokRak || 0} pcs</td>
-                <td class="text-center">${(p.stokGudang || 0) + (p.stokRak || 0)} pcs</td>
-                <td class="text-center">${isTerisolasi ? '<span style="color:red;font-weight:bold;">Isolasi</span>' : 'Aktif'}</td>
-            `;
-            tbody.appendChild(tr);
-        });
+    async pilihBarangPindah() {
+        const barcode = document.getElementById('rakSelectBarcode').value;
+        const infoBox = document.getElementById('rakInfoStok');
+        const detailBox = document.getElementById('rakDetailStok');
+        if (!barcode) { if (infoBox) infoBox.style.display = 'none'; return; }
+
+        document.getElementById('rakBarcode').value = barcode;
+        const p = await DB.get("produk", barcode);
+        if (p && infoBox && detailBox) {
+            detailBox.innerHTML = `<strong>${p.nama}</strong><br>
+                <span style="color:#27ae60;">📦 Gudang Legal: <strong>${p.stokGudang || 0}</strong> pcs</span> | 
+                <span style="color:#e74c3c;">⏳ Terisolasi: <strong>${p.stokIsolasi || 0}</strong> pcs</span>`;
+            infoBox.style.display = 'block';
+        }
     },
 
+    // PROSEK EKSEKUSI UTAMA: Pembatasan ketat pemindahan barang isolasi ke rak
     async pindahKeRakInstan() {
         const barcode = document.getElementById('rakBarcode').value.trim();
         const qty = parseInt(document.getElementById('rakJumlah').value) || 0;
@@ -350,32 +257,28 @@ const Stok = {
         const p = await DB.get("produk", barcode);
         if (!p) { alert("❌ Produk tidak ditemukan!"); return; }
 
-        if (p.hargaBeli === '-' || p.hargaJual === '-') {
-            alert("⛔ Gagal Pindah Stok! Produk ini sedang dalam daftar ISOLASI karena belum memiliki harga legal. Hanya Admin/Owner yang dapat mengaktifkan barang ini dengan mengisi nominal harga terlebih dahulu.");
+        // PROTEKSI MUTLAK: Barang yang harganya '©©' diblokir total dari pemindahan
+        if (p.hargaBeli === '©©' || p.hargaJual === '©©') {
+            alert("⛔ Gagal Pindah! Produk ini berstatus ISOLASI TOTAL karena belum memiliki harga legal dari Owner.");
             return;
         }
 
-        if ((p.stokGudang || 0) < qty) { alert("❌ Stok gudang tidak mencukupi!"); return; }
+        // KUNCI JUMLAH LOKAL: Hanya boleh memindahkan stok yang sudah berstatus legal (stokGudang lama)
+        if ((p.stokGudang || 0) < qty) {
+            alert(`❌ Gagal! Kamu hanya bisa memindahkan maksimal ${p.stokGudang || 0} pcs stok lama yang sudah legal. Sisa stok baru masih dalam status isolasi.`);
+            return;
+        }
 
         p.stokGudang -= qty;
         p.stokRak = (p.stokRak || 0) + qty;
+        p.lastUpdate = Date.now();
+
         await DB.put("produk", p);
-
-        if (typeof firebase !== 'undefined' && firebase.apps.length) await firebase.database().ref('produk_master/' + barcode).set(p);
-        alert(`⚡ Sukses memindahkan ${qty} pcs barang ke Rak Pajangan Toko!`);
-        document.getElementById('rakBarcode').value = '';
-        this.renderMasterBarang();
-    },
-
-    async hapusMasterBarang(barcode) {
-        if (typeof Auth !== 'undefined' && Auth.currentUser && Auth.currentUser.role !== 'Owner') {
-            alert("⛔ Akses Ditolak! Hanya Owner Utama yang memiliki otoritas menghapus data barang.");
-            return;
+        if (typeof firebase !== 'undefined' && firebase.apps.length) {
+            await firebase.database().ref('produk_master/' + barcode).set(p);
         }
-
-        if (!confirm("Apakah Anda yakin ingin menghapus produk ini secara permanen dari sistem?")) return;
-        await DB.delete("produk", barcode);
-        if (typeof firebase !== 'undefined' && firebase.apps.length) await firebase.database().ref('produk_master/' + barcode).remove();
+        alert(`⚡ Sukses memindahkan ${qty} pcs barang legal ke Rak Pajangan Toko!`);
+        document.getElementById('rakBarcode').value = '';
         this.renderMasterBarang();
     }
 };
