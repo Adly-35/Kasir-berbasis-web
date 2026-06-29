@@ -1,0 +1,196 @@
+// auth.js — Modul Autentikasi Rombakan Total (Kebal Peran & Fleksibel Role) — FIXED FINAL v15
+
+const Auth = {
+    currentUser: null,
+    SESSION_TIMEOUT: 8 * 60 * 60 * 1000,
+
+    _akunMaster: {
+        "adly": { username: "adly", nama: "Adly Owner", role: "Owner", level: "admin", pass: "MTIzNDU=" },
+        "kepala_toko1": { username: "kepala_toko1", nama: "Kaprul Toko 1", role: "Supervisor", level: "supervisor", pass: "MTIzNDU=" },
+        "kepala toko1": { username: "kepala toko1", nama: "Kaprul Toko 1", role: "Supervisor", level: "supervisor", pass: "MTIzNDU=" },
+        "kasir1": { username: "kasir1", nama: "Siti Kasir 1", role: "Kasir", level: "kasir", pass: "MTIzNDU=" }
+    },
+
+    async init() {
+        const sessionData = localStorage.getItem('kasirPro_session');
+        if (!sessionData) {
+            this.tampilkanLogin();
+            return;
+        }
+
+        try {
+            const parsed = JSON.parse(sessionData);
+            if (!parsed.token || !parsed.user) throw new Error("Sesi tidak valid");
+
+            const expectedToken = btoa(parsed.user.username + ":" + parsed.user.role + ":" + parsed.timestamp + ":" + this._getSecret());
+            if (parsed.token !== expectedToken) throw new Error("Token tidak valid");
+
+            const sekarang = Date.now();
+            if (sekarang - parsed.timestamp > this.SESSION_TIMEOUT) {
+                this.logout("Sesi Anda telah berakhir (8 jam). Silakan login kembali.");
+                return;
+            }
+
+            this.currentUser = parsed.user;
+            this.applyRoleUI();
+            this.tampilkanApp();
+
+            setTimeout(() => {
+                if (typeof Stok !== 'undefined' && Stok.renderMasterBarang) Stok.renderMasterBarang();
+                if (typeof refreshBadgeNotifikasi === 'function') refreshBadgeNotifikasi();
+            }, 500);
+
+        } catch (e) {
+            console.error("Sesi error:", e);
+            this.logout("Sesi rusak. Silakan login kembali.");
+        }
+    },
+
+    _getSecret() {
+        return "kasirpro_secret_v2_2026";
+    },
+
+    async login() {
+        const usernameEl = document.getElementById('loginUsername');
+        const passwordEl = document.getElementById('loginPassword');
+
+        if (!usernameEl || !passwordEl) {
+            alert("❌ Form login mengalami gangguan, silakan refresh.");
+            return;
+        }
+
+        const username = usernameEl.value.trim().toLowerCase();
+        const password = passwordEl.value;
+
+        if (!username || !password) {
+            alert("❌ Harap masukkan Username dan Password!");
+            return;
+        }
+
+        try {
+            let karyawan = this._akunMaster[username];
+
+            if (!karyawan && typeof DB !== 'undefined' && DB.instance) {
+                karyawan = await DB.get("karyawan", username);
+            }
+
+            if (!karyawan) {
+                alert("❌ Username tidak terdaftar!");
+                return;
+            }
+
+            if (karyawan.pass !== btoa(password)) {
+                alert("❌ Password yang Anda masukkan salah!");
+                return;
+            }
+
+            let userRole = karyawan.role || karyawan.level || 'Kasir';
+            let roleFinal = 'Kasir';
+            
+            if (userRole.toLowerCase() === 'owner' || userRole.toLowerCase() === 'admin') {
+                roleFinal = 'Owner';
+            } else if (userRole.toLowerCase() === 'supervisor' || userRole.toLowerCase() === 'kepala toko') {
+                roleFinal = 'Supervisor';
+            }
+
+            const userData = {
+                username: karyawan.username,
+                nama: karyawan.nama,
+                role: roleFinal,
+                foto: karyawan.foto || null
+            };
+
+            const timestamp = Date.now();
+            const token = btoa(userData.username + ":" + userData.role + ":" + timestamp + ":" + this._getSecret());
+
+            localStorage.setItem('kasirPro_session', JSON.stringify({
+                user: userData,
+                token: token,
+                timestamp: timestamp
+            }));
+
+            this.currentUser = userData;
+            
+            const labelKasir = document.getElementById('labelKasirAktif');
+            if (labelKasir) labelKasir.textContent = `👤 ${userData.nama}`;
+
+            this.applyRoleUI();
+            this.tampilkanApp();
+
+            usernameEl.value = '';
+            passwordEl.value = '';
+
+            if (typeof bukaTab === 'function') {
+                bukaTab('tab-kasir');
+            }
+
+        } catch (e) {
+            alert("❌ Gagal masuk ke sistem kasir: " + e.message);
+        }
+    },
+
+    logout(pesan = "Anda telah logout.") {
+        localStorage.removeItem('kasirPro_session');
+        this.currentUser = null;
+        alert(pesan);
+        setTimeout(() => {
+            window.location.replace(window.location.href);
+        }, 100);
+    },
+
+    isOwner() { return this.currentUser && this.currentUser.role === 'Owner'; },
+    isSupervisor() { return this.currentUser && this.currentUser.role === 'Supervisor'; },
+    isKasir() { return this.currentUser && this.currentUser.role === 'Kasir'; },
+
+    checkAccess(tabId) {
+        const semuaLevelTabs = ['tab-kasir', 'tab-master'];
+        const kasirSupervisorTabs = ['tab-patroli', 'tab-request'];
+        const ownerOnlyTabs = ['tab-stok-toko', 'tab-approval', 'tab-rekap', 'tab-karyawan', 'tab-setting'];
+
+        if (this.isOwner()) {
+            return true;
+        }
+        
+        if (this.isSupervisor()) {
+            const supervisorTabs = [...semuaLevelTabs, ...kasirSupervisorTabs];
+            if (!supervisorTabs.includes(tabId)) {
+                alert("⛔ Akses Ditolak! Menu khusus Owner.");
+                return false;
+            }
+            return true;
+        }
+        
+        if (this.isKasir()) {
+            const kasirTabs = [...semuaLevelTabs, ...kasirSupervisorTabs];
+            if (!kasirTabs.includes(tabId)) {
+                alert("⛔ Akses Ditolak! Menu khusus Supervisor/Owner.");
+                return false;
+            }
+            return true;
+        }
+
+        return false;
+    },
+
+    applyRoleUI() {
+        document.querySelectorAll('.owner-only').forEach(el => el.classList.add('hidden'));
+
+        if (this.isOwner()) {
+            document.querySelectorAll('.owner-only').forEach(el => el.classList.remove('hidden'));
+        }
+    },
+
+    tampilkanLogin() {
+        const loginScreen = document.getElementById('halaman-login');
+        const mainApp = document.getElementById('konten-aplikasi');
+        if (loginScreen) loginScreen.style.display = 'flex';
+        if (mainApp) mainApp.classList.add('hidden');
+    },
+
+    tampilkanApp() {
+        const loginScreen = document.getElementById('halaman-login');
+        const mainApp = document.getElementById('konten-aplikasi');
+        if (loginScreen) loginScreen.style.display = 'none';
+        if (mainApp) mainApp.classList.remove('hidden');
+    }
+};

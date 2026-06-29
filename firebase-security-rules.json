@@ -1,0 +1,59 @@
+{
+  "rules": {
+    // System configuration - only owner can write
+    "system_config": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() == 'Owner'"
+    },
+
+    // Users - only owner can create, user can read own data
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && (auth.uid == $uid || root.child('users').child(auth.uid).child('role').val() == 'Owner')"
+      }
+    },
+
+    // Products - all authenticated users can read, owner can write
+    "produk_master": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() == 'Owner'"
+    },
+
+    // Transactions - all authenticated users can read, any auth can write (for kasir)
+    "transaksi": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    // Stock requests - all authenticated users can read, kasir can write
+    "request_stok": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+
+    // Cash drawer - owner only
+    "kas_laci": {
+      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() == 'Owner'",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() == 'Owner'"
+    },
+
+    // Employees - owner only
+    "karyawan": {
+      ".read": "auth != null && root.child('users').child(auth.uid).child('role').val() == 'Owner'",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() == 'Owner'"
+    },
+
+    // Store settings - owner only
+    "pengaturan_toko": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() == 'Owner'"
+    },
+
+    // Transaction counter - owner only
+    "counter_transaksi": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() == 'Owner'"
+    }
+  }
+}

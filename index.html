@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4CAF50">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <title>Kasir Pro - Sistem Manajemen Gudang & Toko</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
+    
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-box">
+            <div class="spinner"></div>
+            <div class="loading-text">Memproses...</div>
+        </div>
+    </div>
+
+    <div id="toastContainer" class="toast-container"></div>
+
+    <div id="halaman-login" class="login-container" style="display:flex;">
+        <div class="login-box">
+            <div class="login-logo">🛒</div>
+            <h2>Kasir Pro</h2>
+            <p class="login-subtitle">Sistem Manajemen Gudang & Toko</p>
+            
+            <label class="input-label">Username:</label>
+            <input type="text" id="loginUsername" placeholder="Masukkan username" autocomplete="off">
+            
+            <label class="input-label">Password:</label>
+            <input type="password" id="loginPassword" placeholder="Masukkan password">
+            
+            <button class="btn btn-primary btn-full" onclick="Auth.login()">🔑 Masuk</button>
+        </div>
+    </div>
+
+    <div id="konten-aplikasi" class="app-container hidden">
+        <header class="app-header">
+            <div class="header-left">
+                <span class="header-logo">🛍️</span>
+                <div>
+                    <h1 id="txtNamaTokoHeader" style="margin:0; font-size:16px;">Nama Toko</h1>
+                    <span id="labelKasirAktif" class="user-badge">👤 Memuat Sesi...</span>
+                </div>
+            </div>
+            <div id="userPanel" style="display:flex; align-items:center; gap:8px;"></div>
+            
+            <button class="btn btn-sm" style="background:#f39c12; color:white; font-weight:bold;" onclick="DBSync.jalankanSinkronisasi(true)">🔄 Sync Cloud Manual</button>
+            <button class="btn btn-danger btn-sm" onclick="Auth.logout()">🚪 Keluar</button>
+        </header>
+
+        <nav class="app-nav">
+            <button id="nav-kasir" class="tab-btn active" onclick="bukaTab('tab-kasir')">🛒 Kasir</button>
+            <button id="nav-patroli" class="tab-btn kasir-supervisor-only" onclick="bukaTab('tab-patroli')">🔍 Cek Stok</button>
+            <button id="nav-request" class="tab-btn kasir-supervisor-only" onclick="bukaTab('tab-request')">
+                📤 Minta Stok
+                <span id="badgeNotifReq" class="badge-count hidden">0</span>
+                <span id="dotNotifReq" class="nav-alert-dot hidden" style="position:absolute;top:2px;right:2px;width:8px;height:8px;background:#e74c3c;border-radius:50%;"></span>
+            </button>
+            <button id="nav-master" class="tab-btn owner-only hidden" onclick="bukaTab('tab-master')">📦 Data Barang</button>
+            <button id="nav-stok-toko" class="tab-btn owner-only hidden" onclick="bukaTab('tab-stok-toko')">🔄 Pindah Stok</button>
+            <button id="nav-approval" class="tab-btn owner-only hidden" onclick="bukaTab('tab-approval')">
+                ✅ Setuju Stok
+                <span id="badgeNotifApp" class="badge-count hidden">0</span>
+                <span id="dotNotifApp" class="nav-alert-dot hidden" style="position:absolute;top:2px;right:2px;width:8px;height:8px;background:#e74c3c;border-radius:50%;"></span>
+            </button>
+            <button id="nav-rekap" class="tab-btn owner-only hidden" onclick="bukaTab('tab-rekap')">📊 Laporan</button>
+            <button id="nav-karyawan" class="tab-btn owner-only hidden" onclick="bukaTab('tab-karyawan')">👥 Karyawan</button>
+            <button id="nav-setting" class="tab-btn owner-only hidden" onclick="bukaTab('tab-setting')">🏪 Profil Toko</button>
+            <button id="nav-firebase" class="tab-btn owner-only hidden" onclick="bukaTab('tab-firebase')">🔧 Firebase</button>
+        </nav>
+
+        <div id="areaScannerGlobalBox" class="hidden" style="width: 100%; max-width: 320px; margin: 10px auto; border: 3px solid #4CAF50; border-radius: 8px; overflow: hidden; background: #000; display: none; position: relative;">
+            <video id="videoScannerGlobal" style="width: 100%; height: auto; display: block;"></video>
+            <div style="position: absolute; top: 50%; left: 5%; right: 5%; height: 2px; background: red; transform: translateY(-50%);"></div>
+        </div>
+
+        <main class="app-main">
+            <div id="tab-kasir" class="tab-content">
+                <div class="kasir-layout">
+                    <div class="kasir-kiri">
+                        <div class="card" style="margin-bottom:10px; padding:12px;">
+                            <button class="btn btn-sm" style="width:100%; background:#27ae60; color:white; font-weight:bold; margin-bottom:8px;" onclick="ScannerGlobal.sakelarKamera('inputBarcode', 'kasir')">📷 Buka Kamera Scanner HP</button>
+                            <div style="display:flex; gap:8px;">
+                                <input type="text" id="inputBarcode" placeholder="Scan/Ketik Barcode (Contoh: 5*12345)..." style="flex:1; font-weight:bold;">
+                                <button class="btn btn-primary" onclick="Kasir.scanManual()">⚡ Tambah</button>
+                            </div>
+                        </div>
+                        <div class="card" style="padding:0; overflow:hidden;">
+                            <table class="table" style="margin:0;">
+                                <thead>
+                                    <tr>
+                                        <th>Nama Barang</th>
+                                        <th style="width:70px; text-align:center;">Qty</th>
+                                        <th style="text-align:right;">Subtotal</th>
+                                        <th style="width:40px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bodyKeranjangKasir"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="kasir-kanan">
+                        <div class="card-total"><div class="total-label">TOTAL BELANJA</div><div id="txtTotalBayar" class="total-value">Rp 0</div></div>
+                        <div class="card" style="padding:12px;">
+                            <label class="input-label">💳 Metode Pembayaran:</label>
+                            <select id="kasirMetode" class="form-control" style="margin-bottom:10px; font-weight:bold;"><option value="tunai">💵 UANG TUNAI</option><option value="qris">📱 QRIS / TRANSFER</option></select>
+                            <label class="input-label">💰 Nominal Uang Diterima (Rp):</label>
+                            <input type="number" id="inputUangBayar" class="form-control" placeholder="0" style="font-size:18px; font-weight:bold;" oninput="Kasir.hitungKembalian()">
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:8px;">
+                                <button class="btn btn-secondary btn-sm" onclick="Kasir.setUangPas()">Uang Pas</button>
+                                <button class="btn btn-secondary btn-sm" onclick="document.getElementById('inputUangBayar').value=50000; Kasir.hitungKembalian()">Rp 50k</button>
+                                <button class="btn btn-secondary btn-sm" onclick="document.getElementById('inputUangBayar').value=100000; Kasir.hitungKembalian()">Rp 100k</button>
+                                <button class="btn btn-danger btn-sm" onclick="Kasir.kosongkanKeranjang()">🧹 Bersih</button>
+                            </div>
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px;">
+                                <button class="btn btn-sm" style="background:#8e44ad; color:white; font-weight:bold;" onclick="Kasir.simpanDraftLaci()">💾 Hold Draft</button>
+                                <button class="btn btn-sm" style="background:#2980b9; color:white; font-weight:bold; position:relative;" onclick="Kasir.panggilDraftLaci()">📂 Recall Draft <span id="badgeDraftCount" style="position:absolute; top:-5px; right:-5px; background:#e74c3c; color:white; border-radius:50%; padding:2px 5px; font-size:10px; display:none;">1</span></button>
+                            </div>
+                            <div class="kembalian-box" style="margin-top:12px; padding:10px; background:#f5f5f5; text-align:right;"><div style="font-size:11px; color:#666;">UANG KEMBALIAN</div><div id="txtKembalian" style="font-size:20px; font-weight:bold; color:#2c3e50;">Rp 0</div></div>
+                            <button class="btn btn-success btn-full" style="margin-top:12px; height:45px; font-weight:bold;" onclick="Kasir.selesaiTransaksi()">🔥 Selesai & Cetak Struk</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-patroli" class="tab-content hidden">
+                <div class="card" style="border:2px solid var(--primary); background:#f0f9f0;">
+                    <h3>🔍 Cek Stok Real-time</h3>
+                    <button class="btn btn-sm" style="width:100%; background:#27ae60; color:white; font-weight:bold; margin-bottom:10px;" onclick="ScannerGlobal.sakelarKamera('patroliBarcode', 'patroli')">📷 Buka Kamera Cek Rak</button>
+                    <div style="display:flex; gap:8px;">
+                        <input type="text" id="patroliBarcode" placeholder="Scan/ketik barcode produk..." style="flex:1;" onkeypress="if(event.key==='Enter') PatroliRak.scanPatroli()">
+                        <button class="btn btn-success" onclick="PatroliRak.scanPatroli()">🔍 Cek Produk</button>
+                    </div>
+                    <div id="hasilScanPatroli" style="display:none;"></div>
+                </div>
+                <div class="card" style="margin-top:15px;">
+                    <h3>📋 Tabel Monitoring Stok Rak</h3>
+                    <div id="ringkasanPatroli" style="margin-bottom:10px;"></div>
+                    <div style="display:flex; gap:10px; margin-bottom:10px;"><input type="text" id="cariPatroli" placeholder="🔍 Cari nama/barcode..." style="flex:1; padding:8px;" oninput="PatroliRak.renderTabel()"><button class="btn btn-secondary btn-sm" onclick="PatroliRak.loadData()">🔄 Refresh</button></div>
+                    <div class="table-responsive"><table class="table"><thead><tr><th>Produk</th><th>Harga Jual</th><th>Stok Rak</th><th>Stok Gudang</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="bodyPatroliRak"></tbody></table></div>
+                </div>
+            </div>
+                        <div id="tab-request" class="tab-content hidden">
+                <div class="card">
+                    <h3>📤 Buat Permintaan Restok Barang (Kasir ➜ Gudang)</h3>
+                    <button class="btn btn-sm" style="width:100%; background:#27ae60; color:white; font-weight:bold; margin-bottom:10px;" onclick="ScannerGlobal.sakelarKamera('reqBarcode', 'request')">📷 Buka Kamera Minta Stok</button>
+                    <div class="grid-2">
+                        <div>
+                            <label class="input-label">Pilih Produk Dari Dropdown:</label><select id="reqSelectBarcode" class="form-control" style="margin-bottom:10px;" onchange="RequestStok.pilihBarang()"><option value="">-- Pilih Barang Toko --</option></select>
+                            <label class="input-label">Atau Masukkan Barcode:</label><input type="text" id="reqBarcode" placeholder="Scan kode..." oninput="RequestStok.cekStokLama()">
+                            <div id="reqInfoStok" style="display:none; background:#fff3e0; padding:10px; margin-top:10px; font-size:12px; border-radius:4px;"><div id="reqDetailStok"></div></div>
+                        </div>
+                        <div>
+                            <label class="input-label">Jumlah Qty yang Diminta (Pcs):</label><input type="number" id="reqJumlah" value="0" class="form-control" style="margin-bottom:10px;">
+                            <button class="btn btn-primary btn-full" style="height:40px; font-weight:bold;" onclick="RequestStok.kirimRequest()">🚀 Kirim Permintaan Restok</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card" style="margin-top:15px;"><h3>📜 Log Riwayat Permintaan Restok Anda</h3><div id="panelRiwayatRequest" class="table-responsive"></div></div>
+            </div>
+
+            <div id="tab-master" class="tab-content hidden">
+                <div class="card" style="border:2px solid var(--primary); background:#f0f9f0;">
+                    <h3>📦 Input / Tambah Stok Produk</h3>
+                    <button class="btn btn-sm" style="width:100%; background:#27ae60; color:white; font-weight:bold; margin-bottom:10px;" onclick="ScannerGlobal.sakelarKamera('mBarcode', 'master')">📷 Buka Kamera Input Data Barang</button>
+                    <div class="grid-2">
+                        <div>
+                            <label class="input-label">🔍 Barcode / Kode Produk:</label>
+                            <input type="text" id="mBarcode" placeholder="Scan/ketik barcode..." onchange="Stok.cekProdukLama()" style="margin-bottom:10px;">
+                            <label class="input-label">Nama Barang:</label>
+                            <input type="text" id="mNama" placeholder="Nama barang lengkap..." class="form-control" style="margin-bottom:10px;">
+                            <div id="infoProdukLama" style="display:none; background:#fff3e0; padding:10px; font-size:12px; border-radius:4px;"><div id="detailProdukLama"></div></div>
+                        </div>
+                        <div>
+                            <div id="wrapperHargaMaster">
+                                <label class="input-label">💰 Harga Beli (Rp):</label><input type="text" id="mHargaBeli" class="form-control" style="margin-bottom:10px;">
+                                <label class="input-label">🏷️ Harga Jual Toko (Rp):</label><input type="text" id="mHargaJual" class="form-control" style="margin-bottom:10px;">
+                            </div>
+                            <label class="input-label">📦 Jumlah Masuk Gudang (Pcs):</label><input type="number" id="mQtyMasuk" class="form-control" style="margin-bottom:10px;">
+                            <div style="display:flex; gap:10px;"><button class="btn btn-success" style="flex:1;" onclick="Stok.simpanSmartStok()">💾 Simpan Stok</button><button class="btn btn-secondary" onclick="Stok.bersihkanFormMaster()">🧹 Reset</button></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card" style="margin-top:15px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;"><h3 style="margin:0;">📦 Katalog Data Master Barang</h3><input type="text" id="cariMaster" placeholder="🔍 Cari..." style="max-width:200px;" oninput="Stok.renderMasterBarang()"></div>
+                    <table class="table"><thead id="headerMasterBarang"></thead><tbody id="bodyMasterBarang"></tbody></table>
+                </div>
+            </div>
+
+            <div id="tab-stok-toko" class="tab-content hidden">
+                <div class="card">
+                    <h3>🔄 Pemindahan Langsung (Gudang ➜ Rak Toko)</h3>
+                    <button class="btn btn-sm" style="width:100%; background:#27ae60; color:white; font-weight:bold; margin-bottom:10px;" onclick="ScannerGlobal.sakelarKamera('rakBarcode', 'rak')">📷 Buka Kamera Pindah Rak</button>
+                    <div style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+                        <div style="flex:1; min-width:150px;"><label class="input-label">Scan Barcode Pindah:</label><input type="text" id="rakBarcode" placeholder="Scan barang..." onkeypress="if(event.key==='Enter') Stok.pindahKeRakInstan()"></div>
+                        <div style="width:80px;"><label class="input-label">Qty Pindah:</label><input type="number" id="rakJumlah" value="1"></div>
+                        <button class="btn btn-success" onclick="Stok.pindahKeRakInstan()">🔄 Pindahkan ke Rak</button>
+                    </div>
+                </div>
+                <div class="card" style="margin-top:15px;"><h3>🏪 Monitoring Total Pajangan di Rak Toko</h3><table class="table"><thead><tr><th>Nama Produk</th><th>Stok Gudang</th><th>Stok Rak Jual</th><th>Total Stok</th><th>Status</th></tr></thead><tbody id="bodyStokToko"></tbody></table></div>
+            </div>
+
+            <div id="tab-approval" class="tab-content hidden"><div class="card"><h3>✅ Jendela Persetujuan Restok (Khusus Owner)</h3><div id="panelApprovalKosong" class="text-center text-muted" style="padding:20px;">🎉 Bagus! Seluruh pengajuan bersih.</div><div id="panelApprovalList" style="display:flex; flex-direction:column; gap:10px;"></div></div></div>
+
+            <div id="tab-rekap" class="tab-content hidden">
+                <h2>📊 Laporan & Analisis Kinerja Toko</h2>
+                <div class="card" style="display:flex; flex-wrap:wrap; gap:15px;"><div style="flex:1;"><label class="input-label">💰 Kas Awal Laci Hari Ini:</label><input type="number" id="inputKasAwal" onchange="Rekap.aturKasAwal(this.value)"></div><div style="flex:1;"><label class="input-label">📅 Periode:</label><select id="filterPeriodeRekap" onchange="Rekap.loadHistoriTransaksi()"><option value="hari_ini">📆 Hari Ini</option><option value="semua">🌍 Semua Waktu</option></select></div></div>
+                <div class="grid-3"><div class="card-stok card-blue"><small>Omset Penjualan</small><div id="txtOmset" style="font-size:20px; font-weight:bold;">Rp 0</div></div><div class="card-stok card-green"><small>Estimasi Laba</small><div id="txtLaba" style="font-size:20px; font-weight:bold;">Rp 0</div></div><div class="card-stok card-purple"><small>Kas Laci Riil (Tunai)</small><div id="txtKasLaci" style="font-size:20px; font-weight:bold;">Rp 0</div></div></div>
+                <h3 style="margin-top:20px;">📜 Histori Transaksi Periode Ini</h3><table class="table"><thead><tr><th>No Struk</th><th>Waktu</th><th>Kasir</th><th>Total</th><th>Metode</th></tr></thead><tbody id="bodyHistoriTransaksi"></tbody></table>
+            </div>
+
+            <div id="tab-karyawan" class="tab-content hidden">
+                <h2>👥 Manajemen Karyawan</h2>
+                <div id="areaKaryawanUtama">
+                    <button id="btnTambahKaryawan" class="btn btn-success btn-full" style="margin-bottom:15px;" onclick="Karyawan.bukaFormTambah()">➕ Tambah Akun Anggota Baru</button>
+                    <div id="panelFormKaryawan" class="card hidden">
+                        <h4 id="judulFormKaryawan">Tambah Akun Baru</h4>
+                        <label class="input-label">Username:</label><input type="text" id="kUsername">
+                        <label class="input-label">Nama Lengkap:</label><input type="text" id="kNama">
+                        <label class="input-label">Sandi Akun:</label><input type="password" id="kPassword">
+                        <label class="input-label">Role:</label><select id="kLevel" class="form-control"><option value="kasir">👤 Staf Kasir Toko</option><option value="supervisor">⚡ Kepala Toko</option><option value="admin">👑 Owner Utama</option></select>
+                        <label class="input-label">Foto Profil:</label>
+                        <input type="file" id="kFoto" accept="image/*">
+                        <div id="previewFotoForm" style="display:none; margin-top:10px;">
+                            <img id="imgPreviewForm" style="width:80px; height:80px; border-radius:50%; object-fit:cover;">
+                        </div>
+                        <div style="display:flex; gap:10px; margin-top:15px;"><button class="btn btn-success" style="flex:1;" onclick="Karyawan.simpanKaryawan()">💾 Simpan</button><button class="btn btn-secondary" style="flex:1;" onclick="Karyawan.sembunyikanForm()">✕ Batal</button></div>
+                    </div>
+                    <table class="table"><thead><tr><th>Username</th><th>Nama Profil</th><th>Level</th><th style="width:100px;">Aksi</th></tr></thead><tbody id="tabelKaryawanBodi"></tbody></table>
+                </div>
+                <div id="areaKaryawanDetail" class="hidden"><button class="btn btn-secondary btn-sm" onclick="Karyawan.kembaliKeDaftar()" style="margin-bottom:15px;">⬅️ Kembali</button><div style="background:#fff; padding:20px; border-radius:8px; text-align:center;"><img id="detFoto" style="width:80px; height:80px; border-radius:50%; object-fit:cover;"><h3 id="detNama">Nama</h3><div id="detBadge"></div><hr><div>Melayani: <span id="detStatTrans">0</span> | Request: <span id="detStatReq">0</span></div><div id="detRiwayatKerja" style="font-size:12px; text-align:left; margin-top:10px;"></div></div></div>
+            </div>
+
+                        <div id="tab-setting" class="tab-content hidden">
+                <div class="card">
+                    <h3>🏪 Pengaturan Dasar Profil Toko</h3>
+                    <label class="input-label">Kode Toko (Angka):</label>
+                    <input type="number" id="settingKodeToko" placeholder="Contoh: 119 atau 199" style="font-weight: bold; color: var(--primary-dark);">
+                    
+                    <label class="input-label">Nama Toko:</label>
+                    <input type="text" id="namaToko">
+                    
+                    <label class="input-label">Alamat Usaha:</label>
+                    <input type="text" id="alamatToko">
+                    
+                    <label class="input-label">Kota / Wilayah Cabang:</label>
+                    <input type="text" id="settingKotaToko" placeholder="Contoh: Surabaya">
+                    
+                    <label class="input-label">Nomor Telepon Toko:</label>
+                    <input type="text" id="settingTelpToko" placeholder="Contoh: No. Telp 0812345678">
+                    
+                    <label class="input-label">Upload Logo Toko (.Jpg/.Png):</label>
+                    <input type="file" id="settingLogoFile" accept="image/*" onchange="Setting.pratinjauLogo(this)">
+                    <div style="margin-top:10px; margin-bottom:15px;">
+                        <img id="imgPreviewLogoToko" style="max-height:60px; display:none; object-fit:contain;">
+                    </div>
+                    <button class="btn btn-success" style="width:100%;" onclick="Setting.simpanProfilTokoCloud()">💾 Simpan Data Toko & Sinkron Struk</button>
+                </div>
+            </div>
+            
+
+            <div id="tab-firebase" class="tab-content hidden">
+                <div class="card" style="border:2px solid #FF9800; background:#fff8e1;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                        <h3 style="margin:0;">🔧 Pengaturan Firebase</h3>
+                        <span id="fbStatusBadge" style="padding:4px 10px; border-radius:12px; color:white; font-size:11px; font-weight:bold;">DEFAULT</span>
+                    </div>
+                    <p style="font-size:12px; color:#666; margin-bottom:15px;">
+                        Konfigurasi ini digunakan untuk sinkronisasi data ke cloud. 
+                        Dapatkan config dari <a href="https://console.firebase.google.com" target="_blank">Firebase Console</a> → Project Settings → General → Your Apps → Config.
+                    </p>
+
+                    <div id="fbStatusText" style="font-size:13px; font-weight:bold; color:#333; margin-bottom:15px; padding:8px; background:#f0f0f0; border-radius:6px;">
+                        📦 Menggunakan konfigurasi DEFAULT
+                    </div>
+
+                    <div class="grid-2">
+                        <div>
+                            <label class="input-label">🔑 API Key <span style="color:red">*</span></label>
+                            <input type="text" id="fbApiKey" placeholder="AIzaSy..." style="margin-bottom:10px;">
+
+                            <label class="input-label">🌐 Auth Domain</label>
+                            <input type="text" id="fbAuthDomain" placeholder="your-app.firebaseapp.com" style="margin-bottom:10px;">
+
+                            <label class="input-label">📡 Database URL <span style="color:red">*</span></label>
+                            <input type="text" id="fbDatabaseURL" placeholder="https://your-app.firebaseio.com" style="margin-bottom:10px;">
+
+                            <label class="input-label">📁 Project ID <span style="color:red">*</span></label>
+                            <input type="text" id="fbProjectId" placeholder="your-project-id" style="margin-bottom:10px;">
+                        </div>
+                        <div>
+                            <label class="input-label">🪣 Storage Bucket</label>
+                            <input type="text" id="fbStorageBucket" placeholder="your-app.appspot.com" style="margin-bottom:10px;">
+
+                            <label class="input-label">📨 Messaging Sender ID</label>
+                            <input type="text" id="fbMessagingSenderId" placeholder="1234567890" style="margin-bottom:10px;">
+
+                            <label class="input-label">🆔 App ID</label>
+                            <input type="text" id="fbAppId" placeholder="1:1234567890:web:abcdef" style="margin-bottom:10px;">
+
+                            <label class="input-label">📊 Measurement ID (Optional)</label>
+                            <input type="text" id="fbMeasurementId" placeholder="G-XXXXXXXXXX" style="margin-bottom:10px;">
+                        </div>
+                    </div>
+
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:15px;">
+                        <button class="btn btn-success" style="flex:1; min-width:120px; font-weight:bold;" onclick="FirebaseConfigManager.saveFromForm()">💾 Simpan Config</button>
+                        <button class="btn btn-primary" style="flex:1; min-width:120px; font-weight:bold; background:#2196F3;" onclick="FirebaseConfigManager.testFromForm()">🧪 Test Koneksi</button>
+                        <button class="btn btn-secondary" style="min-width:100px;" onclick="FirebaseConfigManager.resetToDefault()">🔄 Reset</button>
+                    </div>
+
+                    <hr style="margin:20px 0; border:0; border-top:1px dashed #ccc;">
+
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        <button class="btn btn-sm" style="background:#9C27B0; color:white; flex:1;" onclick="FirebaseConfigManager.exportConfig()">📋 Export JSON</button>
+                        <button class="btn btn-sm" style="background:#009688; color:white; flex:1;" onclick="FirebaseConfigManager.importFromJson()">📥 Import JSON</button>
+                    </div>
+
+                    <div style="margin-top:15px; padding:10px; background:#e3f2fd; border-radius:6px; font-size:12px; color:#1565c0;">
+                        <strong>💡 Tips:</strong> Setelah menyimpan config baru, refresh halaman (F5) agar aplikasi menggunakan koneksi Firebase yang baru. Config disimpan di browser localStorage.
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <div id="modalStokStruk" class="modal-overlay hidden" style="display:none; background:rgba(0,0,0,0.75);">
+        <div class="modal-box" style="background:#fff; max-width:350px; padding:12px; border-radius:4px;">
+            <div id="areaKertasStruk" style="background:#fff; color:#000; padding:15px 10px; font-family:'Courier New', monospace; font-size:12px; line-height:1.3; border:1px solid #ccc;">
+                <div class="text-center" style="margin-bottom:4px;">
+                    <span id="stLogoDefault" style="font-size:24px; font-weight:bold;">🏪</span>
+                    <img id="stLogoCustom" style="max-height:50px; max-width:100%; display:none; margin:0 auto; object-fit:contain;">
+                </div>
+                <div id="stTxtNamaToko" class="text-center" style="font-weight:bold; font-size:16px;"></div>
+                <div id="stTxtAlamatToko" class="text-center" style="font-size:11px; color:#111;"></div>
+                <div id="stTxtKotaToko" class="text-center" style="font-size:11px; color:#111;"></div>
+                <div id="stTxtTelpToko" class="text-center" style="font-size:11px; color:#111; margin-bottom:5px;"></div>
+                
+                <div style="border-top:1px dashed #000; margin:6px 0;"></div>
+                
+                <div style="display:flex; justify-content:space-between; font-size:11px;">
+                    <div id="stTanggal" style="font-weight:bold;"></div>
+                    <div>Kasir: <span id="stNamaKasir" style="font-weight:bold;"></span></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; font-size:11px; margin-top:2px;">
+                    <div id="stTanggalJam"></div>
+                    <div>Trx-ID: <span id="stNoStruk" style="font-weight:bold; font-family:inherit;"></span></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; font-size:11px; margin-top:2px;">
+                    <div id="stTxtCabang"></div>
+                    <div></div>
+                </div>
+                
+                <div style="border-top:1px dashed #000; margin:6px 0;"></div>
+                <div id="stBodyBarang" style="display:flex; flex-direction:column; gap:6px;"></div>
+                <div style="border-top:1px dashed #000; margin:8px 0;"></div>
+                
+                <div style="display:flex; justify-content:space-between;"><span>Total QTY : <span id="stTotalQty" style="font-weight:bold;">0</span></span></div>
+                <div style="margin-top:6px; display:flex; justify-content:space-between;"><span>Sub Total</span><span id="stSubTotal">Rp 0</span></div>
+                <div style="display:flex; justify-content:space-between; font-size:14px; font-weight:bold;"><span>Total</span><span id="stTotal">Rp 0</span></div>
+                <div style="display:flex; justify-content:space-between;"><span>Bayar (Cash)</span><span id="stBayar">Rp 0</span></div>
+                <div style="display:flex; justify-content:space-between;"><span>Kembali</span><span id="stKembalian">Rp 0</span></div>
+                
+                <div style="border-top:1px dashed #000; margin:8px 0;"></div>
+                <div class="text-center" style="font-size:11px; font-weight:bold; margin-top:5px;">Terimakasi Telah Berbelanja</div>
+                <div class="text-center" style="font-size:11px; font-weight:bold;">semoga harimu selalu menyenangkan</div>
+                <div style="border-top:1px dashed #000; margin:6px 0 0 0;"></div>
+            </div>
+            
+            <div style="display:flex; flex-direction:column; gap:6px; margin-top:10px;">
+                <button class="btn btn-success btn-sm" style="width:100%; font-weight:bold; border-radius:4px;" onclick="Kasir.aksiCetakThermal()">🖨️ Opsi 1: Cetak di Kertas Thermal</button>
+                <button class="btn btn-info btn-sm" style="width:100%; font-weight:bold; border-radius:4px; background:#2980b9;" onclick="Kasir.aksiDownloadDigital()">📱 Opsi 2: Download Struk Digital (.Jpg)</button>
+                <button class="btn btn-secondary btn-sm" style="width:100%; border-radius:4px;" onclick="Kasir.tutupStrukPopUp()">✕ Opsi 3: Tutup / Lewati Struk</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modalDokumentasi" class="modal-overlay hidden">
+        <div class="modal-box">
+            <h3>📎 Tautkan Berkas Bukti Serah Terima</h3>
+            <input type="hidden" id="docIdRequest">
+            <input type="text" id="docLink" class="form-control" placeholder="https://drive.google.com/...">
+            <div class="modal-actions" style="display:flex; gap:10px; margin-top:15px;">
+                <button class="btn btn-success" style="flex:1;" onclick="RequestStok.selesaiDokumentasi()">✓ Konfirmasi Ambil Stok</button>
+                <button class="btn btn-secondary" style="flex:1;" onclick="RequestStok.tutupModalDoc()">✕ Tutup</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="db.js"></script>
+    <script src="firebase-config.js"></script>
+    <script src="db-sync.js"></script>
+    <script src="scanner.js"></script>
+    <script src="script.js"></script>
+    <script src="firebase-auth.js"></script>
+    <script src="auth.js"></script>
+    <script src="kasir.js"></script>
+    <script src="stok.js"></script>
+    <script src="request.js"></script>
+    <script src="approval.js"></script>
+    <script src="rekap.js"></script>
+    <script src="karyawan.js"></script>
+    <script src="audio-manager.js"></script>
+    <!-- <script src="beep.js"></script> -->
+    <!-- audio-manager.js already loaded above -->
+    <script src="notification.js"></script>
+    <script src="patroli.js"></script>
+    <script src="utils.js"></script>
+    <script src="setting.js"></script>
+    <script>
+        // Detect login mode on page load
+        (function() {
+            const indicator = document.getElementById('loginModeIndicator');
+            const emailWrapper = document.getElementById('emailFieldWrapper');
+            const helpText = document.getElementById('loginHelpText');
+
+            function updateLoginMode() {
+                try {
+                    // Check if Firebase config exists
+                    const fbConfig = localStorage.getItem('kasirpro_firebase_config');
+                    const firebaseActive = localStorage.getItem('kasirpro_firebase_active') === 'true';
+
+                    // Check if Firebase SDK is actually loaded
+                    const firebaseLoaded = typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0;
+
+                    if ((firebaseActive || fbConfig) && firebaseLoaded) {
+                        indicator.style.background = '#e3f2fd';
+                        indicator.style.color = '#1565c0';
+                        indicator.textContent = '🔐 Mode: Firebase Auth (Cloud)';
+                        emailWrapper.style.display = 'block';
+                        helpText.textContent = 'Gunakan email & password akun Firebase resmi';
+                    } else {
+                        indicator.style.background = '#fff3e0';
+                        indicator.style.color = '#e65100';
+                        if (fbConfig && !firebaseLoaded) {
+                            indicator.textContent = '⚠️ Mode: Local (Firebase SDK belum siap)';
+                        } else {
+                            indicator.textContent = '📦 Mode: Local DB (First-Run Setup)';
+                        }
+                        emailWrapper.style.display = 'none';
+                        helpText.textContent = 'Gunakan username lokal (contoh: adly / kasir1)';
+                    }
+                } catch (e) {
+                    console.error('Error updating login mode:', e);
+                    if (indicator) {
+                        indicator.style.background = '#ffebee';
+                        indicator.style.color = '#c62828';
+                        indicator.textContent = '⚠️ Error memeriksa mode';
+                    }
+                }
+            }
+
+            // Check immediately and after Firebase init
+            updateLoginMode();
+            setTimeout(updateLoginMode, 1000);
+            setTimeout(updateLoginMode, 3000);
+            setTimeout(updateLoginMode, 5000);
+        })();
+    </script>
+</body>
+</html>
